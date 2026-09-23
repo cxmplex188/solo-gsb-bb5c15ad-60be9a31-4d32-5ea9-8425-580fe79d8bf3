@@ -10,7 +10,12 @@ from typing import Annotated
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.errors import RequestValidationErrors
-from app.models.common import EPS, BucketBalance, _is_finite_number
+from app.models.common import (
+    EPS,
+    BucketBalance,
+    _coerce_finite_number,
+    _is_finite_number,
+)
 
 class BucketSpec(BaseModel):
     """令牌桶定义。
@@ -26,6 +31,14 @@ class BucketSpec(BaseModel):
     capacity: Annotated[float, Field(description="桶容量，必须为正数")]
     refill_rate: Annotated[float, Field(description="令牌补充速率（令牌/秒），必须非负")]
     initial: Annotated[float | None, Field(default=None, description="初始余额，默认等于容量")] = None
+
+    @field_validator("capacity", "refill_rate", mode="before")
+    @classmethod
+    def _reject_non_finite_rate_fields(cls, value, info):
+        # 在类型转换前拦截 NaN/Infinity 及字符串转换后的非有限值
+        # （"NaN"/"Infinity" 会被 pydantic lax 模式转成浮点非有限值），
+        # 避免其进入模拟产生 NaN 余额或响应序列化 500。
+        return _coerce_finite_number(value, info.field_name)
 
     @field_validator("capacity", "refill_rate", mode="after")
     @classmethod

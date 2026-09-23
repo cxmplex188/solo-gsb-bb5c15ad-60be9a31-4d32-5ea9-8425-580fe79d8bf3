@@ -6,7 +6,7 @@ from typing import Annotated
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.errors import RequestValidationErrors
-from app.models.common import EPS, _is_finite_number
+from app.models.common import EPS, _coerce_finite_number, _is_finite_number
 
 class ForecastBucket(BaseModel):
     """预测时刻的桶状态快照。
@@ -22,6 +22,12 @@ class ForecastBucket(BaseModel):
     capacity: Annotated[float, Field(description="桶容量，必须为正数")]
     refill_rate: Annotated[float, Field(description="令牌补充速率（令牌/秒），必须非负")]
     balance: Annotated[float, Field(description="当前余额，要求 0 ≤ balance ≤ capacity")]
+
+    @field_validator("capacity", "refill_rate", mode="before")
+    @classmethod
+    def _reject_non_finite_rate_fields(cls, value, info):
+        # 拦截 NaN/Infinity 及字符串转换后的非有限值，避免进入预测逻辑
+        return _coerce_finite_number(value, info.field_name)
 
     @field_validator("capacity", "refill_rate", mode="after")
     @classmethod

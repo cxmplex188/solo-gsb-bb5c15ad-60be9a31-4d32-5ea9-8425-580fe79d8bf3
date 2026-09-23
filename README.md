@@ -83,8 +83,8 @@ docker compose up --build
 | 字段 | 必填 | 说明 |
 | --- | --- | --- |
 | `id` | 是 | 桶唯一标识，非空字符串 |
-| `capacity` | 是 | 桶容量（令牌上限），必须 > 0 |
-| `refill_rate` | 是 | 连续补充速率（令牌/秒），必须 ≥ 0 |
+| `capacity` | 是 | 桶容量（令牌上限），必须为正的有限数值（拒绝 `NaN`/`Infinity`，含字符串转数值后的非有限值） |
+| `refill_rate` | 是 | 连续补充速率（令牌/秒），必须为非负有限数值 |
 | `initial` | 否 | 初始余额，默认等于 `capacity`；要求 0 ≤ initial ≤ capacity |
 
 **请求 `requests[]`**
@@ -171,8 +171,8 @@ docker compose up --build
 | 字段 | 必填 | 说明 |
 | --- | --- | --- |
 | `id` | 是 | 桶唯一标识，非空字符串 |
-| `capacity` | 是 | 桶容量（令牌上限），必须 > 0 |
-| `refill_rate` | 是 | 连续补充速率（令牌/秒），必须 ≥ 0 |
+| `capacity` | 是 | 桶容量（令牌上限），必须为正的有限数值（拒绝 `NaN`/`Infinity`，含字符串转数值后的非有限值） |
+| `refill_rate` | 是 | 连续补充速率（令牌/秒），必须为非负有限数值 |
 | `balance` | 是 | 当前余额（`now` 时刻持有），要求 0 ≤ balance ≤ capacity |
 
 ### 预测语义
@@ -1176,8 +1176,8 @@ docker compose up --build
 | 字段 | 必填 | 说明 |
 | --- | --- | --- |
 | `id` | 是 | 桶唯一标识，非空字符串 |
-| `capacity` | 是 | 桶容量（可用余额上限），必须 > 0 |
-| `refill_rate` | 是 | 连续补充速率（令牌/秒），必须 ≥ 0 |
+| `capacity` | 是 | 桶容量（可用余额上限），必须为正的有限数值（拒绝 `NaN`/`Infinity`，含字符串转数值后的非有限值） |
+| `refill_rate` | 是 | 连续补充速率（令牌/秒），必须为非负有限数值 |
 | `initial` | 否 | 初始可用余额，默认等于 `capacity`；要求 0 ≤ initial ≤ capacity。所有桶初始债务为 0 |
 | `debt_limit` | 是 | 累计债务上限，必须为非负有限数值；`0` 表示完全不允许借债（此时判定与 `/simulate` 相同） |
 
@@ -1420,7 +1420,7 @@ docker compose up --build
 以下非法输入都会被拒绝，错误体统一为 `{"detail": [ {"type", "loc", "msg", ...}, ... ]}`：
 
 - **重复桶**：`buckets[].id` 重复（`duplicate_bucket`）；
-- **非法速率/容量**：`capacity <= 0`、`refill_rate < 0`、非有限数值、`initial`/`balance` 越界；
+- **非法速率/容量**：`capacity <= 0`、`refill_rate < 0`、`capacity` / `refill_rate` 为非有限数值（`NaN` / `Infinity` / `-Infinity`，含字符串转数值后的非有限值，如 `"NaN"` / `"Infinity"`）、`initial`/`balance` 越界；
 - **未知引用**：`chain` 引用了未在 `buckets` 中定义的 ID（`unknown_bucket_ref`）；
 - **非法窗口宽度**：`window_seconds` 缺失、非有限数值或 `<= 0`（`/usage-report` 与 `/fairness-report`）；
 - **非法主体字段**（仅 `/fairness-report`）：`principal` 缺失或不是非空字符串；`weight` 非有限数值或 `<= 0`；同一 `principal` 在不同请求中权重不一致（`inconsistent_principal_weight`）；

@@ -6,7 +6,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from app.errors import RequestValidationErrors
+from app.errors import RequestValidationErrors, _sanitize_non_finite
 from app.debt import debt_simulate
 from app.debt_diff import debt_diff
 from app.fairness import fairness_report
@@ -91,13 +91,20 @@ app = FastAPI(
 
 @app.exception_handler(RequestValidationErrors)
 async def cross_validation_exception_handler(request: Request, exc: RequestValidationErrors):
-    return JSONResponse(status_code=422, content={"detail": exc.errors})
+    return JSONResponse(
+        status_code=422,
+        content={"detail": jsonable_encoder(_sanitize_non_finite(exc.errors))},
+    )
 
 
 @app.exception_handler(RequestValidationError)
 async def pydantic_validation_exception_handler(request: Request, exc: RequestValidationError):
-    # jsonable_encoder：校验器抛出的 ValueError 会进入 ctx.error，需转成可序列化形式
-    return JSONResponse(status_code=422, content={"detail": jsonable_encoder(exc.errors())})
+    # jsonable_encoder：校验器抛出的 ValueError 会进入 ctx.error，需转成可序列化形式；
+    # _sanitize_non_finite：input 回显可能携带 NaN/Infinity，直接 json.dumps 会再抛 500
+    return JSONResponse(
+        status_code=422,
+        content={"detail": jsonable_encoder(_sanitize_non_finite(exc.errors()))},
+    )
 
 
 @app.get("/", tags=["meta"])
