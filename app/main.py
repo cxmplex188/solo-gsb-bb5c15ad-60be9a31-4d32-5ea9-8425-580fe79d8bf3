@@ -1,6 +1,8 @@
 """FastAPI 应用入口。"""
 from __future__ import annotations
 
+import math
+
 from fastapi import FastAPI, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
@@ -89,15 +91,42 @@ app = FastAPI(
 )
 
 
+def _sanitize_non_finite(value):
+    """递归把 NaN/Infinity 等无法 JSON 编码的浮点替换为字符串标记。
+
+    校验错误会原样回显输入（error["input"]）；JSON 裸 token NaN/Infinity
+    在标准 json 解析后即为非有限浮点，不做处理会让 422 响应在渲染阶段
+    抛出 ValueError 退化为 500。替换为 "NaN"/"Infinity"/"-Infinity"
+    后，422 结构保持 {"detail": [...]} 且可被客户端解析定位。
+    """
+    if isinstance(value, float):
+        if math.isnan(value):
+            return "NaN"
+        if math.isinf(value):
+            return "Infinity" if value > 0 else "-Infinity"
+        return value
+    if isinstance(value, dict):
+        return {key: _sanitize_non_finite(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_sanitize_non_finite(item) for item in value]
+    return value
+
+
 @app.exception_handler(RequestValidationErrors)
 async def cross_validation_exception_handler(request: Request, exc: RequestValidationErrors):
-    return JSONResponse(status_code=422, content={"detail": exc.errors})
+    return JSONResponse(
+        status_code=422,
+        content={"detail": jsonable_encoder(_sanitize_non_finite(exc.errors))},
+    )
 
 
 @app.exception_handler(RequestValidationError)
 async def pydantic_validation_exception_handler(request: Request, exc: RequestValidationError):
     # jsonable_encoder：校验器抛出的 ValueError 会进入 ctx.error，需转成可序列化形式
-    return JSONResponse(status_code=422, content={"detail": jsonable_encoder(exc.errors())})
+    errors = jsonable_encoder(exc.errors())
+    return JSONResponse(
+        status_code=422, content={"detail": _sanitize_non_finite(errors)}
+    )
 
 
 @app.get("/", tags=["meta"])

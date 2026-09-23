@@ -10,7 +10,12 @@ from typing import Annotated
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.errors import RequestValidationErrors
-from app.models.common import EPS, BucketBalance, _is_finite_number
+from app.models.common import (
+    EPS,
+    BucketBalance,
+    _coerce_finite_number,
+    _is_finite_number,
+)
 
 class BucketSpec(BaseModel):
     """令牌桶定义。
@@ -27,14 +32,21 @@ class BucketSpec(BaseModel):
     refill_rate: Annotated[float, Field(description="令牌补充速率（令牌/秒），必须非负")]
     initial: Annotated[float | None, Field(default=None, description="初始余额，默认等于容量")] = None
 
-    @field_validator("capacity", "refill_rate", mode="after")
+    @field_validator("capacity", "refill_rate", mode="before")
     @classmethod
     def _validate_rate_fields(cls, value, info):
-        if info.field_name == "capacity" and value <= 0:
+        # 必须在 pydantic 的 float 强制转换之前拦截：NaN 与任何数比较均为
+        # False，mode="after" 的正/非负检查无法拦住 NaN/Infinity
+        # （含 "NaN"/"1e999" 等字符串转换后的非有限值），会进入模拟
+        # 引擎产生 NaN 余额或在响应渲染时触发 500。
+        numeric = _coerce_finite_number(value)
+        if numeric is None:
+            raise ValueError(f"{info.field_name} 必须是有限数值")
+        if info.field_name == "capacity" and numeric <= 0:
             raise ValueError("capacity 必须为正数")
-        if info.field_name == "refill_rate" and value < 0:
+        if info.field_name == "refill_rate" and numeric < 0:
             raise ValueError("refill_rate 必须为非负数")
-        return value
+        return numeric
 
     @field_validator("initial", mode="before")
     @classmethod
